@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ironsh/iron-proxy/internal/config"
@@ -402,17 +403,33 @@ func (p *Proxy) serveTunnelHTTP(clientConn net.Conn, target string, tunnelInfo *
 
 func serveOneHTTPConn(conn net.Conn, handler http.Handler) error {
 	ln := newOneConnListener(conn)
+	var hijacked atomic.Bool
+	var handlers sync.WaitGroup
 	srv := &http.Server{
-		Handler:           handler,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handlers.Add(1)
+			defer handlers.Done()
+			handler.ServeHTTP(w, r)
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       10 * time.Second,
 		ConnState: func(_ net.Conn, state http.ConnState) {
+			if state == http.StateHijacked {
+				hijacked.Store(true)
+			}
 			if state == http.StateClosed || state == http.StateHijacked {
 				ln.closeDone()
 			}
 		},
 	}
 	err := srv.Serve(ln)
+	// A hijacking handler (WebSocket relay, CONNECT tunnel) owns the
+	// connection until it returns. Serve comes back as soon as the hijack
+	// happens, so wait for the handler before returning: callers defer
+	// Close on the connection and must not run it mid-relay.
+	if hijacked.Load() {
+		handlers.Wait()
+	}
 	if errors.Is(err, net.ErrClosed) {
 		return nil
 	}
