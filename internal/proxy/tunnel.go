@@ -412,7 +412,6 @@ func serveOneHTTPConn(conn net.Conn, handler http.Handler) error {
 			}
 		},
 	}
-	srv.SetKeepAlivesEnabled(false)
 	err := srv.Serve(ln)
 	if errors.Is(err, net.ErrClosed) {
 		return nil

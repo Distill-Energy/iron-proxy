@@ -168,8 +168,24 @@ func TestTunnel_CONNECT_HTTPS_MITM(t *testing.T) {
 	defer resp2.Body.Close()
 
 	require.Equal(t, http.StatusOK, resp2.StatusCode)
+	require.False(t, resp2.Close)
 
 	body, err := io.ReadAll(resp2.Body)
+	require.NoError(t, err)
+	require.Equal(t, "hello from tls tunnel", string(body))
+
+	req2, err := http.NewRequest("GET", fmt.Sprintf("https://%s/again", fakeHost), nil)
+	require.NoError(t, err)
+
+	err = req2.Write(tlsConn)
+	require.NoError(t, err)
+
+	resp3, err := http.ReadResponse(tlsBr, req2)
+	require.NoError(t, err)
+	defer resp3.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp3.StatusCode)
+	body, err = io.ReadAll(resp3.Body)
 	require.NoError(t, err)
 	require.Equal(t, "hello from tls tunnel", string(body))
 }
