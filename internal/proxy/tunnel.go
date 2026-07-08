@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/ironsh/iron-proxy/internal/config"
 	"github.com/ironsh/iron-proxy/internal/transform"
@@ -80,7 +81,11 @@ func (p *Proxy) serveTunnelProxyHTTP(conn net.Conn) error {
 			p.handleTunnelCONNECT(w, r)
 			return
 		}
-		p.handleHTTP(w, r, nil)
+		if r.URL.Scheme != "http" {
+			http.Error(w, "unsupported proxy request scheme", http.StatusBadRequest)
+			return
+		}
+		p.handleDirectHTTP(w, r)
 	}))
 }
 
@@ -95,6 +100,7 @@ func (p *Proxy) handleTunnelCONNECT(w http.ResponseWriter, req *http.Request) {
 
 	ok, rejectResp, tunnelInfo := p.tunnelTransformCheck(req.RemoteAddr, host, req.Header)
 	if !ok {
+		w.Header().Set("Connection", "close")
 		if rejectResp == nil {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 			return
@@ -397,15 +403,18 @@ func (p *Proxy) serveTunnelHTTP(clientConn net.Conn, target string, tunnelInfo *
 func serveOneHTTPConn(conn net.Conn, handler http.Handler) error {
 	ln := newOneConnListener(conn)
 	srv := &http.Server{
-		Handler: handler,
-		ConnState: func(c net.Conn, state http.ConnState) {
-			if c == conn && (state == http.StateClosed || state == http.StateHijacked) {
-				_ = ln.Close()
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       10 * time.Second,
+		ConnState: func(_ net.Conn, state http.ConnState) {
+			if state == http.StateClosed || state == http.StateHijacked {
+				ln.closeDone()
 			}
 		},
 	}
+	srv.SetKeepAlivesEnabled(false)
 	err := srv.Serve(ln)
-	if errors.Is(err, net.ErrClosed) || errors.Is(err, http.ErrServerClosed) {
+	if errors.Is(err, net.ErrClosed) {
 		return nil
 	}
 	return err
@@ -459,12 +468,16 @@ func (l *oneConnListener) Accept() (net.Conn, error) {
 }
 
 func (l *oneConnListener) Close() error {
+	l.closeDone()
+	return nil
+}
+
+func (l *oneConnListener) closeDone() {
 	select {
 	case <-l.done:
 	default:
 		close(l.done)
 	}
-	return nil
 }
 
 func (l *oneConnListener) Addr() net.Addr {

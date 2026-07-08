@@ -202,6 +202,24 @@ func TestTunnel_HTTPProxyAbsoluteForm(t *testing.T) {
 	require.Equal(t, "hello from http proxy", string(body))
 }
 
+func TestTunnel_HTTPProxyRejectsAbsoluteFormHTTPS(t *testing.T) {
+	_, tunnelAddr, _ := startTunnelProxy(t, nil)
+
+	conn, err := net.DialTimeout("tcp", tunnelAddr, 5*time.Second)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	_, err = fmt.Fprintf(conn, "GET https://example.com/test HTTP/1.1\r\nHost: example.com\r\n\r\n")
+	require.NoError(t, err)
+
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
 func TestTunnel_SOCKS5_HTTP(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Socks", "true")
@@ -361,6 +379,14 @@ func TestTunnel_TransformReject(t *testing.T) {
 	resp, err := http.ReadResponse(br, nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	_, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	err = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	require.NoError(t, err)
+	_, err = br.Peek(1)
+	require.ErrorIs(t, err, io.EOF)
 }
 
 func TestTunnel_CONNECTHeadersAndRejectResponse(t *testing.T) {
