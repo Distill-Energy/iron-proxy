@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -173,20 +174,32 @@ func TestTunnel_CONNECT_HTTPS_MITM(t *testing.T) {
 	require.Equal(t, "hello from tls tunnel", string(body))
 }
 
-func TestTunnel_CONNECT_MethodNotAllowed(t *testing.T) {
+func TestTunnel_HTTPProxyAbsoluteForm(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/test?x=1", r.RequestURI)
+		w.Header().Set("X-Tunnel-HTTP", "true")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "hello from http proxy")
+	}))
+	defer upstream.Close()
+
 	_, tunnelAddr, _ := startTunnelProxy(t, nil)
 
-	conn, err := net.DialTimeout("tcp", tunnelAddr, 5*time.Second)
+	proxyURL, err := url.Parse("http://" + tunnelAddr)
 	require.NoError(t, err)
-	defer conn.Close()
+	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+	defer transport.CloseIdleConnections()
 
-	_, err = fmt.Fprintf(conn, "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n")
+	client := &http.Client{Transport: transport}
+	resp, err := client.Get(upstream.URL + "/test?x=1")
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
-	br := bufio.NewReader(conn)
-	resp, err := http.ReadResponse(br, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "true", resp.Header.Get("X-Tunnel-HTTP"))
+	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+	require.Equal(t, "hello from http proxy", string(body))
 }
 
 func TestTunnel_SOCKS5_HTTP(t *testing.T) {
