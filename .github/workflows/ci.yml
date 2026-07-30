@@ -28,6 +28,18 @@ jobs:
 
   integration-test:
     runs-on: ubuntu-latest
+    env:
+      INTEGRATION_CREDENTIALS_AVAILABLE: >-
+        ${{
+          secrets.AWS_ACCESS_KEY_ID != '' &&
+          secrets.AWS_SECRET_ACCESS_KEY != '' &&
+          secrets.ANTHROPIC_API_KEY != '' &&
+          secrets.OPENAI_API_KEY != '' &&
+          secrets.OP_SERVICE_ACCOUNT_TOKEN != '' &&
+          secrets.OP_CONNECT_CREDENTIALS_JSON != '' &&
+          secrets.OP_CONNECT_TOKEN != '' &&
+          secrets.GCP_BIGQUERY_SERVICE_ACCOUNT_KEY_B64 != ''
+        }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -52,6 +64,7 @@ jobs:
         run: ./iron-proxy generate-ca -outdir tmp -alg ed25519
 
       - name: Start 1Password Connect server
+        if: env.INTEGRATION_CREDENTIALS_AVAILABLE == 'true'
         working-directory: integration_test/op_connect
         env:
           OP_CONNECT_CREDENTIALS_JSON: ${{ secrets.OP_CONNECT_CREDENTIALS_JSON }}
@@ -80,6 +93,7 @@ jobs:
           exit 1
 
       - name: Run integration tests
+        if: env.INTEGRATION_CREDENTIALS_AVAILABLE == 'true'
         # The BigQuery service account key is stored base64-encoded in
         # secrets so GitHub Actions' substring-based redaction can't mangle
         # unrelated job output that happens to share fragments with the JSON
