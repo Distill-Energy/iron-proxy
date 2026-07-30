@@ -45,12 +45,3 @@ jobs:
           build-args: VERSION=${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=distill-image
           cache-to: type=gha,mode=max,scope=distill-image
-
-      - name: Make package public
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          gh api
-          --method PATCH
-          /orgs/Distill-Energy/packages/container/iron-proxy
-          --field visibility=public
