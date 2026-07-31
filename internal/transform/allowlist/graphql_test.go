@@ -185,6 +185,47 @@ func TestAllowlist_GraphQLOperations(t *testing.T) {
 	}
 }
 
+func TestAllowlist_GraphQLOperationsRequireCompleteBufferedBody(t *testing.T) {
+	allowlist, err := newFromConfig(allowlistConfig{
+		Rules: []allowlistRuleConfig{{
+			Host:              "api.example.com",
+			GraphQLOperations: []string{"query"},
+		}},
+	})
+	require.NoError(t, err)
+
+	body := `{"query":"query Read { viewer { id } }"}`
+	tests := []struct {
+		name     string
+		maxBytes int64
+		want     transform.TransformAction
+	}{
+		{
+			name:     "complete document allowed",
+			maxBytes: int64(len(body)),
+			want:     transform.ActionContinue,
+		},
+		{
+			name:     "truncated document rejected",
+			maxBytes: int64(len(body) - 1),
+			want:     transform.ActionReject,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "https://api.example.com/graphql", strings.NewReader(body))
+			req.Host = "api.example.com"
+			req.Header.Set("Content-Type", "application/json")
+			req.Body = transform.NewBufferedBody(req.Body, tc.maxBytes)
+
+			result, err := allowlist.TransformRequest(context.Background(), &transform.TransformContext{}, req)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, result.Action)
+		})
+	}
+}
+
 func TestAllowlist_GraphQLOperationsGET(t *testing.T) {
 	allowlist, err := newFromConfig(allowlistConfig{
 		Rules: []allowlistRuleConfig{{

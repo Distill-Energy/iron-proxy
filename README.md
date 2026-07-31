@@ -317,6 +317,11 @@ the selected operation is ambiguous, or the request does not contain a document
 `graphql_operations` list denies every GraphQL operation. Omit the field to
 leave GraphQL bodies unrestricted.
 
+A restricted JSON POST body must fit within `proxy.max_request_body_bytes` so
+the proxy can parse the complete GraphQL document. The default limit is 1 MiB;
+larger documents fail closed. Raise the limit if an allowed endpoint accepts
+larger GraphQL requests.
+
 Allowlist entries are ORed. To enforce `graphql_operations`, do not also list
 the same endpoint under `domains` or another matching rule without a GraphQL
 restriction.
