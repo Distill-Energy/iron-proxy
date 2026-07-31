@@ -137,7 +137,7 @@ func TestTransformsFromSync_InvalidSecrets(t *testing.T) {
 }
 
 func TestTransformsFromSync_RoundTrip(t *testing.T) {
-	rules := json.RawMessage(`[{"host":"*.example.com","methods":["GET","POST"],"paths":["/api/*"]},{"host":"api.test.io","methods":["*"],"paths":["*"]}]`)
+	rules := json.RawMessage(`[{"host":"*.example.com","methods":["GET","POST"],"paths":["/api/*"],"graphql_operations":["query"]},{"host":"api.test.io","methods":["*"],"paths":["*"]}]`)
 
 	transforms, err := TransformsFromSync(rules, nil, nil)
 	require.NoError(t, err)
@@ -145,9 +145,10 @@ func TestTransformsFromSync_RoundTrip(t *testing.T) {
 
 	var decoded struct {
 		Rules []struct {
-			Host    string   `yaml:"host"`
-			Methods []string `yaml:"methods"`
-			Paths   []string `yaml:"paths"`
+			Host              string   `yaml:"host"`
+			Methods           []string `yaml:"methods"`
+			Paths             []string `yaml:"paths"`
+			GraphQLOperations []string `yaml:"graphql_operations"`
 		} `yaml:"rules"`
 	}
 	require.NoError(t, transforms[0].Config.Decode(&decoded))
@@ -155,6 +156,7 @@ func TestTransformsFromSync_RoundTrip(t *testing.T) {
 	require.Equal(t, "*.example.com", decoded.Rules[0].Host)
 	require.Equal(t, []string{"GET", "POST"}, decoded.Rules[0].Methods)
 	require.Equal(t, []string{"/api/*"}, decoded.Rules[0].Paths)
+	require.Equal(t, []string{"query"}, decoded.Rules[0].GraphQLOperations)
 	require.Equal(t, "api.test.io", decoded.Rules[1].Host)
 }
 

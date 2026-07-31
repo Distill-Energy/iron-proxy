@@ -81,6 +81,10 @@ type TransformContext struct {
 	Mode       Mode
 	Tunnel     *TunnelInfo
 
+	// TunnelHandshake identifies the synthetic CONNECT request used to admit a
+	// CONNECT or SOCKS5 tunnel before its inner HTTP requests are available.
+	TunnelHandshake bool
+
 	// BodyCapture is the side channel a body_capture transform uses to
 	// communicate captured request body bytes out of the pipeline. The proxy
 	// copies it onto PipelineResult after the request pipeline runs so the

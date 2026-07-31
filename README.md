@@ -210,7 +210,7 @@ Transforms run in order. Built-in transforms:
 
 | Transform   | What it does                                                                                                            |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `allowlist`    | Permits requests to matching domains/CIDRs; rejects everything else (403).                                              |
+| `allowlist`    | Permits requests matching domain/CIDR, HTTP, and optional GraphQL operation rules; rejects everything else (403).        |
 | `secrets`      | Scans headers (and optionally query, path, or body) for proxy tokens and swaps in real secrets from environment variables. |
 | `body_capture` | Records decoded request bodies of matching hosts as `request_body` audit fields. Observation-only; never rejects.       |
 
@@ -253,6 +253,11 @@ transforms:
         - "*.anthropic.com"
       cidrs:
         - "10.0.0.0/8"
+      rules:
+        - host: "api.example.com"
+          methods: ["POST"]
+          paths: ["/graphql"]
+          graphql_operations: ["query"]
 
   - name: secrets
     config:
@@ -287,6 +292,43 @@ Unmatched requests get a `403 Forbidden`.
 
 Domain patterns use glob matching: `*.example.com` matches any subdomain and
 `example.com` itself.
+
+Rule entries can restrict the HTTP `methods` and `paths` accepted for a host or
+CIDR. For GraphQL-over-HTTP endpoints, `graphql_operations` additionally limits
+the selected operation type to any combination of `query`, `mutation`, and
+`subscription` (case-insensitive):
+
+```yaml
+transforms:
+  - name: allowlist
+    config:
+      rules:
+        - host: "api.example.com"
+          methods: ["GET", "POST"]
+          paths: ["/graphql"]
+          graphql_operations: ["query"]
+```
+
+The proxy classifies standard URL-encoded GET requests and JSON POST requests,
+including documents with multiple named operations selected by
+`operationName`. A restricted rule fails closed when the document is malformed,
+the selected operation is ambiguous, or the request does not contain a document
+(for example, a persisted-operation hash alone). An explicitly empty
+`graphql_operations` list denies every GraphQL operation. Omit the field to
+leave GraphQL bodies unrestricted.
+
+A restricted JSON POST body must fit within `proxy.max_request_body_bytes` so
+the proxy can parse the complete GraphQL document. The default limit is 1 MiB;
+larger documents fail closed. Raise the limit if an allowed endpoint accepts
+larger GraphQL requests.
+
+Allowlist entries are ORed. To enforce `graphql_operations`, do not also list
+the same endpoint under `domains` or another matching rule without a GraphQL
+restriction.
+
+Subscription documents sent over GraphQL-over-HTTP can be allowed. GraphQL
+WebSocket frames are not inspected, so a `graphql_operations` rule rejects a
+WebSocket handshake that does not carry an operation document.
 
 **Warn mode:** Set `warn: true` to observe what the allowlist would block without
 actually enforcing it. Requests that would be rejected are allowed through but
@@ -702,8 +744,10 @@ When omitted, the tunnel listener is disabled.
 All protocols go through the same transform pipeline as regular HTTP/HTTPS
 requests. Absolute-form HTTP requests are handled by the normal HTTP proxy
 path. For CONNECT and SOCKS5, the proxy evaluates a synthetic CONNECT request
-against your allowlist and secrets transforms, so tunnel connections are
-subject to the same default-deny policy.
+against your allowlist and secrets transforms. In MITM mode, a matching host
+admits the tunnel handshake, then each inner HTTP request is evaluated again
+with its method, path, headers, and body. SNI-only mode cannot inspect inner
+requests, so it still requires a host-only allowlist rule.
 
 After the CONNECT or SOCKS5 handshake, the proxy peeks at the first byte to
 detect the inner protocol:

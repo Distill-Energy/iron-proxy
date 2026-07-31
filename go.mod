@@ -20,6 +20,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
+	github.com/vektah/gqlparser/v2 v2.5.36
 	github.com/wasilibs/go-pgquery v0.0.0-20260428021157-dca720e45577
 	github.com/zeebo/blake3 v0.2.4
 	go.opentelemetry.io/otel v1.44.0

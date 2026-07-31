@@ -104,11 +104,17 @@ transforms:
       cidrs:
         - "10.0.0.0/8"
         - "172.16.0.0/12"
-      # Rule form: restrict by method and/or path
+      # Rule form: restrict by method, path, and optional GraphQL operation type
       rules:
         - host: "api.openai.com"
           methods: ["POST"]
           paths: ["/v1/*"]
+        # GraphQL-over-HTTP requests must select one of these operation types.
+        # Supported values are query, mutation, and subscription.
+        - host: "api.example.com"
+          methods: ["GET", "POST"]
+          paths: ["/graphql"]
+          graphql_operations: ["query"]
         - host: "*.anthropic.com"
           methods: ["POST"]
           paths: ["/v1/messages", "/v1/complete"]

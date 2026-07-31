@@ -440,7 +440,8 @@ func TestTunnel_CONNECTHeadersAndRejectResponse(t *testing.T) {
 
 func TestTunnelInfoPropagatesToInnerTransforms(t *testing.T) {
 	seen := make(chan *transform.TunnelInfo, 1)
-	tunnelInfoTransform := &tunnelInfoTransform{seen: seen}
+	handshakeSeen := make(chan bool, 1)
+	tunnelInfoTransform := &tunnelInfoTransform{seen: seen, handshakeSeen: handshakeSeen}
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -463,6 +464,12 @@ func TestTunnelInfoPropagatesToInnerTransforms(t *testing.T) {
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	select {
+	case handshake := <-handshakeSeen:
+		require.True(t, handshake)
+	case <-time.After(2 * time.Second):
+		t.Fatal("tunnel transform did not observe handshake context")
+	}
 
 	_, err = fmt.Fprintf(conn, "GET /test HTTP/1.1\r\nHost: %s\r\n\r\n", target)
 	require.NoError(t, err)
@@ -555,13 +562,17 @@ func (c *connectHeaderAuthTransform) TransformResponse(_ context.Context, _ *tra
 }
 
 type tunnelInfoTransform struct {
-	seen chan<- *transform.TunnelInfo
+	seen          chan<- *transform.TunnelInfo
+	handshakeSeen chan<- bool
 }
 
 func (t *tunnelInfoTransform) Name() string { return "tunnel-info" }
 
 func (t *tunnelInfoTransform) TransformRequest(_ context.Context, tctx *transform.TransformContext, req *http.Request) (*transform.TransformResult, error) {
 	if req.Method == http.MethodConnect {
+		if t.handshakeSeen != nil {
+			t.handshakeSeen <- tctx.TunnelHandshake
+		}
 		tctx.Annotate("user_id", "alice")
 		return &transform.TransformResult{Action: transform.ActionContinue}, nil
 	}
