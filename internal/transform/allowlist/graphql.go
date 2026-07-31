@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -56,13 +57,17 @@ func requestGraphQLOperation(req *http.Request) (graphqlOperation, bool, error) 
 
 	switch req.Method {
 	case http.MethodGet:
-		queryValues, ok := req.URL.Query()["query"]
+		values, err := url.ParseQuery(req.URL.RawQuery)
+		if err != nil {
+			return "", false, nil
+		}
+		queryValues, ok := values["query"]
 		if !ok || len(queryValues) != 1 {
 			return "", false, nil
 		}
 		document = queryValues[0]
 
-		operationNames := req.URL.Query()["operationName"]
+		operationNames := values["operationName"]
 		if len(operationNames) > 1 {
 			return "", false, nil
 		}

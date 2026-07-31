@@ -739,8 +739,10 @@ When omitted, the tunnel listener is disabled.
 All protocols go through the same transform pipeline as regular HTTP/HTTPS
 requests. Absolute-form HTTP requests are handled by the normal HTTP proxy
 path. For CONNECT and SOCKS5, the proxy evaluates a synthetic CONNECT request
-against your allowlist and secrets transforms, so tunnel connections are
-subject to the same default-deny policy.
+against your allowlist and secrets transforms. In MITM mode, a matching host
+admits the tunnel handshake, then each inner HTTP request is evaluated again
+with its method, path, headers, and body. SNI-only mode cannot inspect inner
+requests, so it still requires a host-only allowlist rule.
 
 After the CONNECT or SOCKS5 handshake, the proxy peeks at the first byte to
 detect the inner protocol:

@@ -216,6 +216,14 @@ func TestAllowlist_GraphQLOperationsGET(t *testing.T) {
 			url:  "https://api.example.com/graphql?query=%7Bviewer%7D&query=%7Bother%7D",
 			want: transform.ActionReject,
 		},
+		{
+			name: "malformed query string rejected",
+			url: "https://api.example.com/graphql?query=" +
+				url.QueryEscape(`query Read { viewer { id } }`) +
+				"&ignored=x;query=" +
+				url.QueryEscape(`mutation Write { updateViewer { id } }`),
+			want: transform.ActionReject,
+		},
 	}
 
 	for _, tc := range tests {
@@ -224,6 +232,67 @@ func TestAllowlist_GraphQLOperationsGET(t *testing.T) {
 			req.Host = "api.example.com"
 
 			result, err := allowlist.TransformRequest(context.Background(), &transform.TransformContext{}, req)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, result.Action)
+		})
+	}
+}
+
+func TestAllowlist_GraphQLOperationsTunnelHandshake(t *testing.T) {
+	allowlist, err := newFromConfig(allowlistConfig{
+		Rules: []allowlistRuleConfig{{
+			Host:              "api.example.com",
+			Methods:           []string{http.MethodGet, http.MethodPost},
+			Paths:             []string{"/graphql"},
+			GraphQLOperations: []string{"query"},
+		}},
+	})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name      string
+		host      string
+		mode      transform.Mode
+		handshake bool
+		want      transform.TransformAction
+	}{
+		{
+			name:      "matching MITM tunnel admitted by host",
+			host:      "api.example.com:443",
+			mode:      transform.ModeMITM,
+			handshake: true,
+			want:      transform.ActionContinue,
+		},
+		{
+			name:      "SNI-only tunnel cannot enforce GraphQL restriction",
+			host:      "api.example.com:443",
+			mode:      transform.ModeSNIOnly,
+			handshake: true,
+			want:      transform.ActionReject,
+		},
+		{
+			name:      "unmatched MITM tunnel rejected",
+			host:      "other.example.com:443",
+			mode:      transform.ModeMITM,
+			handshake: true,
+			want:      transform.ActionReject,
+		},
+		{
+			name: "ordinary CONNECT request is not a tunnel handshake",
+			host: "api.example.com:443",
+			mode: transform.ModeMITM,
+			want: transform.ActionReject,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodConnect, "https://"+tc.host, nil)
+			req.Host = tc.host
+			result, err := allowlist.TransformRequest(context.Background(), &transform.TransformContext{
+				Mode:            tc.mode,
+				TunnelHandshake: tc.handshake,
+			}, req)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, result.Action)
 		})

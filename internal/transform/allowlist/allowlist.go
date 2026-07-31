@@ -112,6 +112,16 @@ func (a *Allowlist) Name() string { return "allowlist" }
 
 func (a *Allowlist) TransformRequest(_ context.Context, tctx *transform.TransformContext, req *http.Request) (*transform.TransformResult, error) {
 	host := hostmatch.StripPort(req.Host)
+	if tctx.TunnelHandshake && tctx.Mode == transform.ModeMITM {
+		// MITM tunnels re-run the policy once the inner HTTP method, path, and
+		// body are visible. Admit the handshake by host so those rules can run.
+		for i := range a.rules {
+			if a.rules[i].http.Matcher.Matches(host) {
+				return &transform.TransformResult{Action: transform.ActionContinue}, nil
+			}
+		}
+	}
+
 	var graphqlRules []*rule
 	for i := range a.rules {
 		rule := &a.rules[i]
