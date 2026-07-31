@@ -138,7 +138,7 @@ func TestAllowlist_Name(t *testing.T) {
 
 func TestAllowlist_MethodAllowed(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host:    "api.openai.com",
 			Methods: []string{"GET", "POST"},
 		}},
@@ -152,7 +152,7 @@ func TestAllowlist_MethodAllowed(t *testing.T) {
 
 func TestAllowlist_MethodsCaseInsensitive(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host:    "api.openai.com",
 			Methods: []string{"post"},
 		}},
@@ -164,7 +164,7 @@ func TestAllowlist_MethodsCaseInsensitive(t *testing.T) {
 
 func TestAllowlist_NoMethodsAllowsAll(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host: "api.openai.com",
 		}},
 	})
@@ -179,7 +179,7 @@ func TestAllowlist_NoMethodsAllowsAll(t *testing.T) {
 
 func TestAllowlist_PathGlob(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host:  "api.openai.com",
 			Paths: []string{"/v1/*"},
 		}},
@@ -195,7 +195,7 @@ func TestAllowlist_PathGlob(t *testing.T) {
 
 func TestAllowlist_PathExact(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host:  "api.openai.com",
 			Paths: []string{"/health"},
 		}},
@@ -209,7 +209,7 @@ func TestAllowlist_PathExact(t *testing.T) {
 
 func TestAllowlist_NoPathsAllowsAll(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host: "api.openai.com",
 		}},
 	})
@@ -221,7 +221,7 @@ func TestAllowlist_NoPathsAllowsAll(t *testing.T) {
 
 func TestAllowlist_MultiplePaths(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host:  "api.openai.com",
 			Paths: []string{"/v1/chat", "/v1/models"},
 		}},
@@ -237,7 +237,7 @@ func TestAllowlist_MultiplePaths(t *testing.T) {
 
 func TestAllowlist_HostMethodPathCombined(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host:    "api.openai.com",
 			Methods: []string{"POST"},
 			Paths:   []string{"/v1/*"},
@@ -257,7 +257,7 @@ func TestAllowlist_HostMethodPathCombined(t *testing.T) {
 
 func TestAllowlist_MultiRuleSecondMatches(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{
+		Rules: []allowlistRuleConfig{
 			{Host: "api.openai.com", Methods: []string{"POST"}},
 			{Host: "api.anthropic.com", Methods: []string{"GET"}},
 		},
@@ -271,7 +271,7 @@ func TestAllowlist_MultiRuleSecondMatches(t *testing.T) {
 func TestAllowlist_FlatDomainsAndRulesMixed(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
 		Domains: []string{"open.com"},
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host:    "restricted.com",
 			Methods: []string{"GET"},
 		}},
@@ -287,7 +287,7 @@ func TestAllowlist_FlatDomainsAndRulesMixed(t *testing.T) {
 
 func TestAllowlist_RuleWithCIDR(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			CIDR:    "10.0.0.0/8",
 			Methods: []string{"GET"},
 		}},
@@ -340,7 +340,7 @@ func TestAllowlist_WarnFalseStillRejects(t *testing.T) {
 
 func TestAllowlist_WarnModeWithRules(t *testing.T) {
 	a, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{
+		Rules: []allowlistRuleConfig{{
 			Host:    "api.openai.com",
 			Methods: []string{"GET"},
 		}},
@@ -373,7 +373,7 @@ func TestAllowlist_WarnModeWithRules(t *testing.T) {
 
 func TestAllowlist_RuleBothHostAndCIDR(t *testing.T) {
 	_, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{Host: "a.com", CIDR: "10.0.0.0/8"}},
+		Rules: []allowlistRuleConfig{{Host: "a.com", CIDR: "10.0.0.0/8"}},
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "mutually exclusive")
@@ -381,7 +381,7 @@ func TestAllowlist_RuleBothHostAndCIDR(t *testing.T) {
 
 func TestAllowlist_RuleNeitherHostNorCIDR(t *testing.T) {
 	_, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{Methods: []string{"GET"}}},
+		Rules: []allowlistRuleConfig{{Methods: []string{"GET"}}},
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "one of host or cidr is required")
@@ -389,7 +389,7 @@ func TestAllowlist_RuleNeitherHostNorCIDR(t *testing.T) {
 
 func TestAllowlist_RuleInvalidPath(t *testing.T) {
 	_, err := newFromConfig(allowlistConfig{
-		Rules: []hostmatch.RuleConfig{{Host: "a.com", Paths: []string{"no-leading-slash"}}},
+		Rules: []allowlistRuleConfig{{Host: "a.com", Paths: []string{"no-leading-slash"}}},
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "must start with /")

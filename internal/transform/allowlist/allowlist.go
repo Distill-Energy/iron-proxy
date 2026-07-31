@@ -18,17 +18,39 @@ func init() {
 }
 
 // Allowlist is a default-deny transform that checks request hosts, methods,
-// and paths against a set of rules.
+// paths, and optional GraphQL operation types against a set of rules.
 type Allowlist struct {
-	rules []hostmatch.Rule
+	rules []rule
 	warn  bool
 }
 
+type rule struct {
+	http              hostmatch.Rule
+	graphqlOperations map[graphqlOperation]bool // nil = no GraphQL restriction
+}
+
 type allowlistConfig struct {
-	Domains []string               `yaml:"domains"`
-	CIDRs   []string               `yaml:"cidrs"`
-	Rules   []hostmatch.RuleConfig `yaml:"rules"`
-	Warn    bool                   `yaml:"warn"`
+	Domains []string              `yaml:"domains"`
+	CIDRs   []string              `yaml:"cidrs"`
+	Rules   []allowlistRuleConfig `yaml:"rules"`
+	Warn    bool                  `yaml:"warn"`
+}
+
+type allowlistRuleConfig struct {
+	Host              string   `yaml:"host,omitempty"`
+	CIDR              string   `yaml:"cidr,omitempty"`
+	Methods           []string `yaml:"methods,omitempty"`
+	Paths             []string `yaml:"paths,omitempty"`
+	GraphQLOperations []string `yaml:"graphql_operations,omitempty"`
+}
+
+func (c allowlistRuleConfig) hostmatchConfig() hostmatch.RuleConfig {
+	return hostmatch.RuleConfig{
+		Host:    c.Host,
+		CIDR:    c.CIDR,
+		Methods: c.Methods,
+		Paths:   c.Paths,
+	}
 }
 
 func factory(cfg yaml.Node, _ *slog.Logger) (transform.Transformer, error) {
@@ -40,7 +62,7 @@ func factory(cfg yaml.Node, _ *slog.Logger) (transform.Transformer, error) {
 }
 
 func newFromConfig(cfg allowlistConfig) (*Allowlist, error) {
-	var rules []hostmatch.Rule
+	var rules []rule
 
 	// Flat domains → rules with no method/path restrictions.
 	for _, d := range cfg.Domains {
@@ -48,7 +70,7 @@ func newFromConfig(cfg allowlistConfig) (*Allowlist, error) {
 		if err != nil {
 			return nil, err
 		}
-		rules = append(rules, hostmatch.Rule{Matcher: m})
+		rules = append(rules, rule{http: hostmatch.Rule{Matcher: m}})
 	}
 
 	// Flat CIDRs → rules with no method/path restrictions.
@@ -57,15 +79,25 @@ func newFromConfig(cfg allowlistConfig) (*Allowlist, error) {
 		if err != nil {
 			return nil, err
 		}
-		rules = append(rules, hostmatch.Rule{Matcher: m})
+		rules = append(rules, rule{http: hostmatch.Rule{Matcher: m}})
 	}
 
 	// Explicit rules with optional method/path restrictions.
-	compiled, err := hostmatch.CompileRules(cfg.Rules, "allowlist")
+	hostmatchConfigs := make([]hostmatch.RuleConfig, len(cfg.Rules))
+	for i, ruleConfig := range cfg.Rules {
+		hostmatchConfigs[i] = ruleConfig.hostmatchConfig()
+	}
+	compiled, err := hostmatch.CompileRules(hostmatchConfigs, "allowlist")
 	if err != nil {
 		return nil, err
 	}
-	rules = append(rules, compiled...)
+	for i, httpRule := range compiled {
+		operations, err := compileGraphQLOperations(cfg.Rules[i].GraphQLOperations, i)
+		if err != nil {
+			return nil, err
+		}
+		rules = append(rules, rule{http: httpRule, graphqlOperations: operations})
+	}
 
 	return &Allowlist{rules: rules, warn: cfg.Warn}, nil
 }
@@ -79,8 +111,31 @@ func New(domains []string, cidrs []string) (*Allowlist, error) {
 func (a *Allowlist) Name() string { return "allowlist" }
 
 func (a *Allowlist) TransformRequest(_ context.Context, tctx *transform.TransformContext, req *http.Request) (*transform.TransformResult, error) {
-	if hostmatch.MatchAnyRule(a.rules, req) {
-		return &transform.TransformResult{Action: transform.ActionContinue}, nil
+	host := hostmatch.StripPort(req.Host)
+	var graphqlRules []*rule
+	for i := range a.rules {
+		rule := &a.rules[i]
+		if !rule.http.Matches(host, req.Method, req.URL.Path) {
+			continue
+		}
+		if rule.graphqlOperations == nil {
+			return &transform.TransformResult{Action: transform.ActionContinue}, nil
+		}
+		graphqlRules = append(graphqlRules, rule)
+	}
+
+	if len(graphqlRules) > 0 {
+		operation, classified, err := requestGraphQLOperation(req)
+		if err != nil {
+			return nil, err
+		}
+		if classified {
+			for _, rule := range graphqlRules {
+				if rule.allowsGraphQLOperation(operation) {
+					return &transform.TransformResult{Action: transform.ActionContinue}, nil
+				}
+			}
+		}
 	}
 	if a.warn {
 		tctx.Annotate("action", "warn")
